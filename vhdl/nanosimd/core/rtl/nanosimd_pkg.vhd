@@ -22,10 +22,15 @@ package nanosimd_pkg is
     
   type regfile_e is (RegFileFF, RegFileFPGA, RegFileLatch);
   type rv32m_e   is (RV32MNone, RV32MSlow, RV32MFast, RV32MSingleCycle);
-  type opcode_e  is (OC_LOAD, OC_MISC_MEM, OC_OP_IMM, OC_AUIPC, OC_STORE, OC_OP, OC_LUI, OC_BRANCH, OC_JALR, OC_JAL, OC_SYSTEM);
+  type opcode_e  is (OC_LOAD, OC_MISC_MEM, OC_OP_IMM, OC_AUIPC, OC_STORE, OC_OP, 
+                     OC_LUI, OC_BRANCH, OC_JALR, OC_JAL, OC_SYSTEM);
 
   function opcode(instr : in std_ulogic_vector(6 downto 0)) return opcode_e;
 
+  type alu_op_e is (ALU_ADD, ALU_SUB, ALU_XOR, ALU_OR, ALU_AND, ALU_SRA, ALU_SRL, ALU_SLL, 
+                    ALU_LT, ALU_LTU, ALU_GE, ALU_GEU, ALU_EQ,ALU_NE)
+
+  type md_op_e  is (MD_MULL, MD_MULH, MD_DIV, MD_REM);
 
 
 end package nanosimd_pkg;
