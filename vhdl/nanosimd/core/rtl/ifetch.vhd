@@ -9,6 +9,7 @@ use work.func_pkg.all;
 entity ifetch is
   generic (
     -- NOTE: Just to be prepared for generic use of generic pkg
+    -- TODO: Or better leave this to the optimizer?
     fetch_addr_width_g : positive := 32
   );
   port (    
@@ -56,8 +57,8 @@ begin
       v.pc    := (r.pc(r.pc'left downto 2) + 1) & "00";
     end if;
 
-    fetch_o.pc  <= std_ulogic_vector(r.pc_del);
-    imem_o.addr <= std_ulogic_vector(r.pc);
+    fetch_o.pc    <= std_ulogic_vector(r.pc_del);
+    imem_o.addr   <= std_ulogic_vector(r.pc);
    
     rin <= v;
   end process comb0;

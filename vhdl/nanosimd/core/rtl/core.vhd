@@ -3,6 +3,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 library work;
+use work.config_pkg.all;
 use work.nanosimd_pkg.all;
 use work.func_pkg.all;
 use work.decoupled_io_pkg.all;
