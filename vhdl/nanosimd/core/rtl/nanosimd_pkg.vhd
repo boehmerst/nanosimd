@@ -194,7 +194,7 @@ package nanosimd_pkg is
   end record decode_comb_out_t;
 
   type execute_in_t is record
-    irq               : std_ulogic;
+    irq               : irq_ctrl_t;
     pc                : std_ulogic_vector(core_addr_width_c-1 downto 0);
     inst              : std_ulogic_vector(core_data_width_c-1 downto 0);
     reg_a             : std_ulogic_vector(log2ceil(gprf_size_c)-1  downto 0);
@@ -222,6 +222,8 @@ package nanosimd_pkg is
     flush_ex          : std_ulogic;
     ctrl_mem          : ctrl_memory_t;
     ctrl_wrb          : forward_t;
+    branch            : std_ulogic;
+    branch_target     : std_ulogic_vector(core_addr_width_c-1 downto 0);
   end record execute_out_t;
   constant dflt_execute_out_c : execute_out_t :=(
     alu_result        => (others=>'0'),
@@ -229,74 +231,10 @@ package nanosimd_pkg is
     flush_id          => '0',
     flush_ex          => '0',
     ctrl_mem          => dflt_ctrl_memory_c,
-    ctrl_wrb          => dflt_forward_c
+    ctrl_wrb          => dflt_forward_c,
+    branch            => '0',
+    branch_target     => (others => '0')
   );
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   --TODO These types are just a starting point to get things running
   --     We want decopubled memory access without requiring the core
@@ -334,23 +272,40 @@ package nanosimd_pkg is
   );
 
 
-
-
-
-
-
-
-
-
-
-  
-  
+  function select_register_data (reg_dat, reg, wb_dat : std_ulogic_vector; write : std_ulogic) return std_ulogic_vector;
+  function fwd_cond (reg_write : std_ulogic; reg_a, reg_d : std_ulogic_vector) return std_ulogic;
 
 end package nanosimd_pkg;
 
 package body nanosimd_pkg is
-
-  
+  --------------------------------------------------------------------------------
+  -- This function select the register value:
+  --   A) zero
+  --   B) bypass value read from register file
+  --   C) value from register file
+  --------------------------------------------------------------------------------
+  function select_register_data (reg_dat, reg, wb_dat : std_ulogic_vector; write : std_ulogic) return std_ulogic_vector is
+    variable val : std_ulogic_vector(core_data_width_c-1 downto 0);
+  begin
+    if(cfg_reg_force_zero_c = true and is_zero(reg) = '1') then
+      val := (others => '0');
+    elsif(cfg_reg_fwd_wrb_c = true and write = '1') then
+      val := wb_dat;
+    else
+      val := reg_dat;
+    end if;
+      return val;
+  end function select_register_data;
+    
+  --------------------------------------------------------------------------------
+  -- This function checks if a forwarding condition is met. The condition is met 
+  -- of register A and D match
+  -- and the signal needs to be written back to the register file
+  --------------------------------------------------------------------------------
+  function fwd_cond (reg_write : std_ulogic; reg_a, reg_d : std_ulogic_vector ) return std_ulogic is
+  begin
+    return reg_write and compare(reg_a, reg_d);
+  end function fwd_cond;
 
 end package body nanosimd_pkg;
 

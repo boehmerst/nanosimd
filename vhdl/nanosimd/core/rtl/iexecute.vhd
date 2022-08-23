@@ -9,10 +9,9 @@ use work.func_pkg.all;
 
 entity iexecute is
   generic (
-    core_data_width_g : integer := 32;
-    core_addr_width_g : integer := 32;
-    gprf_size_g       : integer := 32;
-
+    exec_data_width_g : integer := 32;
+    exec_addr_width_g : integer := 32;
+    exec_gprf_size_g  : integer := 32;
     use_m_ext_g       : boolean := false
   );
   port (
@@ -88,41 +87,75 @@ architecture rtl of iexecute is
 
   type reg_t is record
     state : state_t;
-    pc    : std_ulogic_vector(core_addr_width_g-1 downto 0);
-    inst  : std_ulogic_vector(core_data_width_g-1 downto 0);
+    pc             :  std_ulogic_vector(exec_addr_width_g-1 downto 0);
+    inst           : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    fwd_dec        : forward_t;
+    fwd_dec_result : std_ulogic_vector(exec_data_width_g-1 downto 0);
   end record reg_t;
   constant dflt_reg_c : reg_t :=(
-    state => BRANCHED,
-    pc    => (others=>'0'),
-    inst  => (others=>'0')
+    state          => BRANCHED,
+    pc             => (others => '0'),
+    inst           => (others => '0'),
+    fwd_dec        => dflt_forward_c,
+    fwd_dec_result => (others => '0')
   );
 
-  signal r, rin : reg_t;
+  signal r, rin      : reg_t;
+
+  signal s_decode    : decode_out_t;
+  signal s_execute   : execute_out_t;
+
+  signal gprfi0_gprf : gprf_out_t;
+  signal gprf        : gprf_in_t;
+
+  signal wb_data     : std_ulogic_vector(exec_data_width_g-1 downto 0);
 
 begin
   -----------------------------------------------------------------------------
+  -- regfile
+  -----------------------------------------------------------------------------
+  gprf.ena   <= en_i;
+  gprf.adr_a <= s_decode.reg_a;
+  gprf.adr_b <= s_decode.reg_b;
+  gprf.dat_w <= wb_data;
+  gprf.adr_w <= s_decode.ctrl_wrb.reg_d;
+  gprf.wre   <= s_decode.ctrl_wrb.reg_write;
+
+  gprfi0 : entity work.gprf_register
+    generic map (
+      dmem_width_g => exec_data_width_g,
+      gprf_size_g  => log2ceil(exec_gprf_size_g)
+    )
+    port map (
+      clk_i     => clk_i,
+      reset_n_i => reset_n_i,
+      gprf_o    => gprfi0_gprf,
+      gprf_i    => gprf
+    );
+
+  -----------------------------------------------------------------------------
   -- comb0
   -----------------------------------------------------------------------------
-  comb0: process (execute_i, r) is
+  comb0: process (execute_i, gprfi0_gprf, r) is
     ---------------------------------------------------------------------------
     -- decoder related variables
     ---------------------------------------------------------------------------
     variable v             : reg_t;
-    variable instruction   : std_ulogic_vector(core_data_width_g-1     downto 0);
-    variable pc            : std_ulogic_vector(core_addr_width_g-1     downto 0);
-    variable reg_a         : std_ulogic_vector(log2ceil(gprf_size_g)-1 downto 0);
-    variable reg_b         : std_ulogic_vector(log2ceil(gprf_size_g)-1 downto 0);
-    variable reg_d         : std_ulogic_vector(log2ceil(gprf_size_g)-1 downto 0);
+    variable instruction   : std_ulogic_vector(exec_data_width_g-1     downto 0);
+    variable pc            : std_ulogic_vector(exec_addr_width_g-1     downto 0);
+    variable reg_a         : std_ulogic_vector(log2ceil(exec_gprf_size_g)-1 downto 0);
+    variable reg_b         : std_ulogic_vector(log2ceil(exec_gprf_size_g)-1 downto 0);
+    variable reg_d         : std_ulogic_vector(log2ceil(exec_gprf_size_g)-1 downto 0);
     variable opcode        : std_ulogic_vector(6 downto 0);
     variable inst_rtype    : inst_rtype_t;
     variable inst_itype    : inst_itype_t;
     variable inst_stype    : inst_stype_t;
     variable inst_utype    : inst_utype_t;
-    variable inst_iimm     : std_ulogic_vector(core_data_width_g-1 downto 0);
-    variable inst_simm     : std_ulogic_vector(core_data_width_g-1 downto 0);
-    variable inst_bimm     : std_ulogic_vector(core_data_width_g-1 downto 0);
-    variable inst_uimm     : std_ulogic_vector(core_data_width_g-1 downto 0);
-    variable inst_jimm     : std_ulogic_vector(core_data_width_g-1 downto 0);
+    variable inst_iimm     : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    variable inst_simm     : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    variable inst_bimm     : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    variable inst_uimm     : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    variable inst_jimm     : std_ulogic_vector(exec_data_width_g-1 downto 0);
     variable irq_masked    : std_ulogic_vector(7 downto 0);
 
     variable decode        : decode_out_t;
@@ -130,25 +163,25 @@ begin
     ---------------------------------------------------------------------------
     -- execution related variables
     ---------------------------------------------------------------------------
-    variable alu_src_a     : std_ulogic_vector(core_data_width_g-1   downto 0);
-    variable alu_src_b     : std_ulogic_vector(core_data_width_g-1   downto 0);
-    variable result        : std_ulogic_vector(core_data_width_g-1   downto 0);
-    variable result_add    : std_ulogic_vector(core_data_width_g-1   downto 0);
-    variable result_mul    : std_ulogic_vector(2*core_data_width_g-1 downto 0);
-    variable alu_result    : std_ulogic_vector(core_data_width_g-1   downto 0);
+    variable alu_src_a     : std_ulogic_vector(exec_data_width_g-1   downto 0);
+    variable alu_src_b     : std_ulogic_vector(exec_data_width_g-1   downto 0);
+    variable result        : std_ulogic_vector(exec_data_width_g-1   downto 0);
+    variable result_add    : std_ulogic_vector(exec_data_width_g-1   downto 0);
+    variable result_mul    : std_ulogic_vector(2*exec_data_width_g-1 downto 0);
+    variable alu_result    : std_ulogic_vector(exec_data_width_g-1   downto 0);
     variable zero          : std_ulogic;
     variable sign_bits     : std_ulogic_vector(2 downto 0);
     variable carry         : std_ulogic;
     variable carry_out     : std_ulogic;
     variable overflow      : std_ulogic;
     variable negative      : std_ulogic;
-    variable dat_a         : std_ulogic_vector(core_data_width_g-1 downto 0);
-    variable dat_b         : std_ulogic_vector(core_data_width_g-1 downto 0);
-    variable sel_dat_a     : std_ulogic_vector(core_data_width_g-1 downto 0);
-    variable sel_dat_b     : std_ulogic_vector(core_data_width_g-1 downto 0); 
-    variable mem_result    : std_ulogic_vector(core_data_width_g-1 downto 0);
+    variable dat_a         : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    variable dat_b         : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    variable sel_dat_a     : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    variable sel_dat_b     : std_ulogic_vector(exec_data_width_g-1 downto 0); 
+    variable mem_result    : std_ulogic_vector(exec_data_width_g-1 downto 0);
     variable branch        : std_ulogic;
-    variable branch_target : std_ulogic_vector(core_addr_width_g-1 downto 0);
+    variable branch_target : std_ulogic_vector(exec_addr_width_g-1 downto 0);
 
     variable execute       : execute_out_t;
 
@@ -157,10 +190,11 @@ begin
 
     ----------------------------------------------------------------------------
     -- source and destination decoding
+    -- NOTE: Just for (future?) hazard detection
     ----------------------------------------------------------------------------
-    reg_a  := get_rega(execute_i.inst);
-    reg_b  := get_regb(execute_i.inst);
-    reg_d  := get_regd(execute_i.inst);
+    --reg_a  := get_rega(execute_i.inst);
+    --reg_b  := get_regb(execute_i.inst);
+    --reg_d  := get_regd(execute_i.inst);
 
     ---------------------------------------------------------------------------
     -- decode
@@ -190,17 +224,22 @@ begin
     inst_uimm  := get_uimm(instruction);
     inst_jimm  := get_jimm(instruction);
 
-    ----------------------------------------------------------------------------
-    -- source and destination decoding
-    ----------------------------------------------------------------------------
-    reg_a  := get_rega(execute_i.inst);
-    reg_b  := get_regb(execute_i.inst);
-    reg_d  := get_regd(execute_i.inst);
+
+    opcode     := get_opcode(instruction);
 
     -- TODO: The reused decode_out and execute_out types might have elements not required or meant to be register
     --       which we still need as registers. The dafault assignment is to net get trapped by latches
     decode  := dflt_decode_out_c;
     execute := dflt_execute_out_c;
+
+    decode.pc                 := pc;
+    decode.ctrl_wrb.reg_d     := inst_rtype.rd;
+    decode.reg_a              := inst_rtype.rs1;
+    decode.reg_b              := inst_rtype.rs2;
+    decode.imm                := (others=>'0');
+    decode.ctrl_ex            := dflt_ctrl_execution_c;
+    decode.ctrl_mem           := dflt_ctrl_memory_c;
+    decode.ctrl_wrb.reg_write := '0';
 
     -- TODO: place relevant condition (e.g. stall, kill, fetch delay, irq, trap and hazard conditions etc. here)
     if(false) then
@@ -368,13 +407,15 @@ begin
       --------------------------------------------------------------------------
       -- memory fence instructions (currently not supported)
       --------------------------------------------------------------------------
-      assert False report "misc mem instructions are not implemented yet" severity failure;
+      --assert False report "misc mem instructions are not implemented yet" severity failure;
+      decode.ctrl_ex.csr.illegal := '1';
 
     elsif(compare(opcode(6 downto 2), inst_system_c)   = '1') then
       --------------------------------------------------------------------------
       -- system instruction (could be emulated as traps)
       --------------------------------------------------------------------------
-      assert False report "system calls are not implemented yet" severity failure;
+      --assert False report "system calls are not implemented yet" severity failure;
+      decode.ctrl_ex.csr.illegal := '1';
 
     elsif(use_m_ext_g and compare(opcode(6 downto 2), inst_op_c) = '1' and inst_rtype.func7(0) = '1') then
       --------------------------------------------------------------------------
@@ -384,7 +425,7 @@ begin
 
       -- serial divider requires stalling the pipeline
       if(inst_rtype.func3(2) = '1') then
-        assert False report "pipeline stall not implemented yes" severity failure;
+        --assert False report "pipeline stall not implemented yes" severity failure;
         --if(r.decode.stall = '0') then
         --  decode.stall          := '1';
         --end if;
@@ -420,6 +461,10 @@ begin
     else
       decode.ctrl_ex.csr.illegal := '1';
     end if;
+
+    -- TODO: just for debugging
+    s_decode <= decode;
+
     
     ---------------------------------------------------------------------------
     -- execute
@@ -429,8 +474,8 @@ begin
     -- TODO: select source data from regfile
     -- short bypass from regfile vs. forward pass within regfile 
     ---------------------------------------------------------------------------
-    sel_dat_a := (others => '0');
-    sel_dat_b := (others => '0');
+    sel_dat_a := select_register_data(gprfi0_gprf.dat_a, decode.reg_a, r.fwd_dec_result, fwd_cond(r.fwd_dec.reg_write, r.fwd_dec.reg_d, decode.reg_a));
+    sel_dat_b := select_register_data(gprfi0_gprf.dat_b, decode.reg_b, r.fwd_dec_result, fwd_cond(r.fwd_dec.reg_write, r.fwd_dec.reg_d, decode.reg_b));
 
     ---------------------------------------------------------------------------
     -- conditional flush execution in case of control hazards (branches)
@@ -454,8 +499,8 @@ begin
     ---------------------------------------------------------------------------
     -- multiplex between the variaous source data paths
     ---------------------------------------------------------------------------
-    dat_a := (others => '0');
-    dat_b := (others => '0');
+    dat_a := sel_dat_a;
+    dat_b := sel_dat_b;
 
     ---------------------------------------------------------------------------
     -- TODO: place data interface to load store unit here
@@ -467,9 +512,9 @@ begin
     -- set the first operand of the ALU
     ----------------------------------------------------------------------------
     case(decode.ctrl_ex.alu_src_a) is
-      when ALU_SRC_PC       => alu_src_a := sign_extend(decode.pc, '0', core_data_width_g);
+      when ALU_SRC_PC       => alu_src_a := sign_extend(decode.pc, '0', exec_data_width_g);
       when ALU_SRC_ZERO     => alu_src_a := (others => '0');
-      when ALU_SRC_ZIMM     => alu_src_a := sign_extend(reg_a, '0', core_data_width_g);
+      when ALU_SRC_ZIMM     => alu_src_a := sign_extend(reg_a, '0', exec_data_width_g);
       when others           => alu_src_a := dat_a;
     end case;
 
@@ -488,7 +533,7 @@ begin
     ----------------------------------------------------------------------------
     case(decode.ctrl_ex.carry) is
       when CARRY_ONE   => carry := '1';
-      when CARRY_ARITH => carry := alu_src_a(core_data_width_g-1);
+      when CARRY_ARITH => carry := alu_src_a(exec_data_width_g-1);
       when others      => carry := '0';
     end case;
 
@@ -498,8 +543,8 @@ begin
     -- generate flags used to evaluate branch condition
     ----------------------------------------------------------------------------
     zero      := is_zero(result_add(result_add'left-1 downto 0));
-    negative  := result_add(core_data_width_g-1);
-    sign_bits := result_add(core_data_width_g-1) & alu_src_a(core_data_width_g-1) & alu_src_b(core_data_width_g-1);
+    negative  := result_add(exec_data_width_g-1);
+    sign_bits := result_add(exec_data_width_g-1) & alu_src_a(exec_data_width_g-1) & alu_src_b(exec_data_width_g-1);
 
     case(sign_bits) is
       when "001" | "010" | "011" | "111" 
@@ -507,8 +552,8 @@ begin
       when others => carry_out := '0';
     end case;
 
-    overflow  := (    result_add(core_data_width_g-1) and not alu_src_a(core_data_width_g-1) and not alu_src_b(core_data_width_g-1)) or
-                 (not result_add(core_data_width_g-1) and     alu_src_a(core_data_width_g-1) and     alu_src_b(core_data_width_g-1));
+    overflow  := (    result_add(exec_data_width_g-1) and not alu_src_a(exec_data_width_g-1) and not alu_src_b(exec_data_width_g-1)) or
+                 (not result_add(exec_data_width_g-1) and     alu_src_a(exec_data_width_g-1) and     alu_src_b(exec_data_width_g-1));
 
     ----------------------------------------------------------------------------
     -- multiplication
@@ -531,8 +576,8 @@ begin
       when ALU_SHIFT_RIGHT => result := shift_right(alu_src_a, alu_src_b(4 downto 0), carry);
       when ALU_UCOMP       => result := (result'left downto 1 => '0') & not carry_out;
       when ALU_COMP        => result := (result'left downto 1 => '0') & (negative xor overflow);
-      when ALU_MUL         => result := result_mul(core_data_width_g-1 downto 0);
-      when ALU_MULH        => result := result_mul(2*core_data_width_g-1 downto core_data_width_g);
+      when ALU_MUL         => result := result_mul(exec_data_width_g-1 downto 0);
+      when ALU_MULH        => result := result_mul(2*exec_data_width_g-1 downto exec_data_width_g);
       when ALU_DIV         => result := (others => '0'); --div_blocki0_quotient;
       when ALU_REM         => result := (others => '0'); --div_blocki0_reminder;
       when others          => null;
@@ -549,7 +594,7 @@ begin
     -- mux result with PC increment 
     ----------------------------------------------------------------------------
     case(decode.ctrl_ex.branch_cond) is
-      when JAL | JALR => alu_result := sign_extend(std_ulogic_vector(unsigned(decode.pc(decode.pc'left downto 2)) + 1) & "00", '0', core_data_width_g);
+      when JAL | JALR => alu_result := sign_extend(std_ulogic_vector(unsigned(decode.pc(decode.pc'left downto 2)) + 1) & "00", '0', exec_data_width_g);
       when others     => alu_result := result;
     end case;
 
@@ -603,16 +648,12 @@ begin
       end case;
     end if;
 
+    -- TODO: combinatorial vs. registered?
+    execute_o.branch        <= branch;
+    execute_o.branch_target <= branch_target;
 
-    ----------------------------------------------------------------------------
-    -- determine flush signals
-    ----------------------------------------------------------------------------
-    --v.exec.flush_id := branch;
-    --v.exec.flush_ex := branch;
-
-
-
-
+    -- TODO: multiplex with memory load
+    wb_data                 <= alu_result;
 
     ---------------------------------------------------------------------------
     -- controller
@@ -633,7 +674,11 @@ begin
       when others   => null;
     end case fsm0;
 
+    -- TODO: just for debugging
+    s_execute <= execute;
 
+    v.fwd_dec        := decode.ctrl_wrb;
+    v.fwd_dec_result := wb_data;
 
     rin <= v;
   end process comb0;

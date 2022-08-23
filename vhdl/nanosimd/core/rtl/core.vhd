@@ -37,6 +37,9 @@ architecture rtl of core is
   signal fetch                : fetch_in_t;
   signal fetchi0_fetch        : fetch_out_t;
 
+  signal exec                 : execute_in_t;
+  signal execi0_execute       : execute_out_t;
+
 begin
   ------------------------------------------------------------------------------
   -- enable for core and execution units
@@ -47,9 +50,9 @@ begin
   ------------------------------------------------------------------------------
   -- fetch (IF)
   ------------------------------------------------------------------------------
-  fetch.stall         <= '0';           --decodei0_decode_comb.stall or decodei0_decode_comb.hazard;
-  fetch.branch        <= '0';           --execi0_exec_comb.branch;
-  fetch.branch_target <= (others=>'0'); --execi0_exec_comb.branch_target;
+  fetch.stall         <= '0';
+  fetch.branch        <= execi0_execute.branch;
+  fetch.branch_target <= execi0_execute.branch_target;
   
   fetchi0: entity work.ifetch
     generic map (
@@ -65,6 +68,26 @@ begin
       imem_o             => imem_o
     );
 
+  -- TODO: some quick assignments to get simulation up
+  exec.pc    <= fetchi0_fetch.pc;
+  exec.inst  <= imem_i.data;
+  exec.stall <= '0';
+
+  execi0: entity work.iexecute
+    generic map (
+      exec_addr_width_g => core_addr_width_c,
+      exec_data_width_g => core_data_width_c,
+      exec_gprf_size_g  => gprf_size_c,
+      use_m_ext_g       => use_m_ext_c
+    )
+    port map (
+      clk_i              => clk_i,
+      reset_n_i          => reset_n_i,
+      init_i             => init_i,
+      en_i               => exec_en,
+      execute_i          => exec,
+      execute_o          => execi0_execute
+    );
 
 
 end architecture rtl;

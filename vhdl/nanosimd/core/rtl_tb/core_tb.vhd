@@ -5,6 +5,7 @@ use ieee.numeric_std.all;
 library work;
 use work.func_pkg.all;
 use work.nanosimd_pkg.all;
+use work.config_pkg.all;
 use work.decoupled_io_pkg.all;
 
 entity core_tb is
@@ -59,44 +60,46 @@ begin
   ------------------------------------------------------------------------------
   -- 32 Bit instruction memory
   ------------------------------------------------------------------------------
-  --imemi0 : entity work.sram 
-  --  generic map (
-  --    width_g => CFG_IMEM_WIDTH,
-  --    size_g  => rom_size_c-2
-  --  )
-  --  port map (
-  --    clk_i   => clk,
-  --    we_i    => '0',
-  --    en_i    => corei0_imem.ena,
-  --    addr_i  => corei0_imem.adr(rom_size_c-1 downto 2),
-  --    di_i    => (others=>'0'),
-  --    do_o    => imem.dat
-  --  );
+  imemi0 : entity work.sram 
+    generic map (
+      file_name_g  => "./rom/rom.mem",
+      data_width_g => core_data_width_c,
+      addr_width_g => rom_size_c-2
+    )
+    port map (
+      clk_i   => clk,
+      we_i    => '0',
+      en_i    => corei0_imem.en,
+      addr_i  => corei0_imem.addr(rom_size_c-1 downto 2),
+      di_i    => (others=>'0'),
+      do_o    => imem.data
+    );
     
   ------------------------------------------------------------------------------
   -- 32 Bit data memory
   ------------------------------------------------------------------------------
-  --dmemi0: block is
-  --  signal mem_we    : std_ulogic_vector(3 downto 0);
-  --  signal mem_en    : std_ulogic;
-  --begin   
-  --  mem_we <= corei0_dmem.sel when corei0_dmem.we = '1' else "0000";
-  --  mem_en <= corei0_dmem.ena;
+  dmemi0: block is
+    signal mem_we    : std_ulogic_vector(3 downto 0);
+    signal mem_en    : std_ulogic;
+  begin   
+    mem_we <= corei0_dmem.sel when corei0_dmem.we = '1' else "0000";
+    mem_en <= corei0_dmem.en;
     
-  --  memi0 : entity work.sram_4en
-  --    generic map (
-  --      width_g => CFG_DMEM_WIDTH,
-  --      size_g  => ram_size_c-2
-  --    )
-  --    port map (
-  --      clk_i => clk,
-  --      wre_i => mem_we,
-  --      ena_i => mem_en,
-  --      adr_i => corei0_dmem.adr(ram_size_c-1 downto 2),
-  --      dat_i => corei0_dmem.dat,
-  --      dat_o => dmem.dat
-  --    );
-  --end block dmemi0;
+    memi0 : entity work.sram_4en
+      generic map (
+        file_name_g  => "./rom/rom.mem",
+        data_width_g => core_data_width_c,
+        addr_width_g => ram_size_c-2
+      )
+      port map (
+        clk_i  => clk,
+        we_i   => mem_we,
+        en_i   => mem_en,
+        addr_i => corei0_dmem.addr(ram_size_c-1 downto 2),
+        di_i   => corei0_dmem.data,
+        do_o   => dmem.data
+      );
+  end block dmemi0;
 
 
   ------------------------------------------------------------------------------
