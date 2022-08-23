@@ -652,9 +652,6 @@ begin
     execute_o.branch        <= branch;
     execute_o.branch_target <= branch_target;
 
-    -- TODO: multiplex with memory load
-    wb_data                 <= alu_result;
-
     ---------------------------------------------------------------------------
     -- controller
     ---------------------------------------------------------------------------
@@ -674,11 +671,14 @@ begin
       when others   => null;
     end case fsm0;
 
+    v.fwd_dec        := decode.ctrl_wrb;
+    v.fwd_dec_result := alu_result;
+
     -- TODO: just for debugging
     s_execute <= execute;
 
-    v.fwd_dec        := decode.ctrl_wrb;
-    v.fwd_dec_result := wb_data;
+    -- TODO: multiplex with memory load
+    wb_data   <= alu_result;
 
     rin <= v;
   end process comb0;
