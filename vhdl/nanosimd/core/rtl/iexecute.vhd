@@ -82,20 +82,21 @@ architecture rtl of iexecute is
     return std_ulogic_vector(result);
   end function multiply;
 
-
-  type state_t is (DISPATCH, RUNNING, ALU_WAIT, BRANCH, BRANCHED, MEM_REQ, MEM_WAIT); 
+  type state_t is (ST_DISPATCH, ST_RUNNING, ST_ALU_WAIT, ST_BRANCH, ST_BRANCHED, ST_MEM_REQ, ST_MEM_WAIT);
 
   type reg_t is record
-    state : state_t;
-    pc             :  std_ulogic_vector(exec_addr_width_g-1 downto 0);
+    state          : state_t;
+    pc             : std_ulogic_vector(exec_addr_width_g-1 downto 0);
     inst           : std_ulogic_vector(exec_data_width_g-1 downto 0);
+    kill           : std_ulogic;
     fwd_dec        : forward_t;
     fwd_dec_result : std_ulogic_vector(exec_data_width_g-1 downto 0);
   end record reg_t;
   constant dflt_reg_c : reg_t :=(
-    state          => BRANCHED,
+    state          => ST_BRANCHED,
     pc             => (others => '0'),
     inst           => (others => '0'),
+    kill           => '0',
     fwd_dec        => dflt_forward_c,
     fwd_dec_result => (others => '0')
   );
@@ -119,7 +120,7 @@ begin
   gprf.adr_b <= s_decode.reg_b;
   gprf.dat_w <= wb_data;
   gprf.adr_w <= s_decode.ctrl_wrb.reg_d;
-  gprf.wre   <= s_decode.ctrl_wrb.reg_write;
+  gprf.wre   <= s_decode.ctrl_wrb.reg_write and not r.kill;
 
   gprfi0 : entity work.gprf_register
     generic map (
@@ -242,8 +243,13 @@ begin
     decode.ctrl_wrb.reg_write := '0';
 
     -- TODO: place relevant condition (e.g. stall, kill, fetch delay, irq, trap and hazard conditions etc. here)
-    if(false) then
-    
+    if(r.kill = '1') then
+        -- NOTE: just for readability
+        decode.pc             := (others=>'0');
+        decode.ctrl_wrb.reg_d := (others=>'0');
+        decode.reg_a          := (others=>'0');
+        decode.reg_b          := (others=>'0');
+        decode.imm            := (others=>'0');
     elsif(compare(opcode(6 downto 2), inst_load_c)     = '1') then
       --------------------------------------------------------------------------
       --  load is encoded as I-Type instruction
@@ -474,7 +480,7 @@ begin
     -- TODO: select source data from regfile
     -- short bypass from regfile vs. forward pass within regfile 
     ---------------------------------------------------------------------------
-    sel_dat_a := select_register_data(gprfi0_gprf.dat_a, decode.reg_a, r.fwd_dec_result, fwd_cond(r.fwd_dec.reg_write, r.fwd_dec.reg_d, decode.reg_a));
+    sel_dat_a := gprfi0_gprf.dat_a; --select_register_data(gprfi0_gprf.dat_a, decode.reg_a, r.fwd_dec_result, fwd_cond(r.fwd_dec.reg_write, r.fwd_dec.reg_d, decode.reg_a));
     sel_dat_b := select_register_data(gprfi0_gprf.dat_b, decode.reg_b, r.fwd_dec_result, fwd_cond(r.fwd_dec.reg_write, r.fwd_dec.reg_d, decode.reg_b));
 
     ---------------------------------------------------------------------------
@@ -628,7 +634,7 @@ begin
     ----------------------------------------------------------------------------
     -- evaluate branch condition
     ----------------------------------------------------------------------------
-    if(false) then -- TODO: place flush, kill, ... condition here
+    if(r.kill) then -- TODO: place flush, kill, ... condition here
       branch := '0';
     elsif(false) then -- TODO: place exception condition here
       branch := '1';
@@ -655,25 +661,38 @@ begin
     ---------------------------------------------------------------------------
     -- controller
     ---------------------------------------------------------------------------
+    v.kill := '0'; -- TODO: for now we assume one cycle delay after branch -> clear
+
     fsm0: case(r.state) is
-      when BRANCHED => v.state := DISPATCH;
+      when ST_BRANCH   => v.state := ST_BRANCHED;
 
-      when DISPATCH => v.state := RUNNING;
+      when ST_BRANCHED => v.state := ST_DISPATCH;
 
-      when RUNNING  => v.state := RUNNING;
+      when ST_DISPATCH => v.state := ST_RUNNING;
 
-      when ALU_WAIT => v.state := RUNNING;
+      when ST_RUNNING  => v.state := ST_RUNNING;
+                          if branch = '1' then
+                            v.state := ST_BRANCH;
+                            v.kill  := '1';
+                          end if;
 
-      when MEM_REQ  => v.state := RUNNING;
+      when ST_ALU_WAIT => v.state := ST_RUNNING;
 
-      when MEM_WAIT => v.state := RUNNING;
+      when ST_MEM_REQ  => v.state := ST_RUNNING;
+
+      when ST_MEM_WAIT => v.state := ST_RUNNING;
       
       when others   => null;
     end case fsm0;
 
+
     v.fwd_dec        := decode.ctrl_wrb;
     v.fwd_dec_result := alu_result;
 
+    if r.kill = '1' then
+      v.fwd_dec.reg_write := '0';
+    end if;
+      
     -- TODO: just for debugging
     s_execute <= execute;
 

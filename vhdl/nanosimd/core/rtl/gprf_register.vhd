@@ -21,18 +21,11 @@ end gprf_register;
 architecture rtl of gprf_register is
   type regfile_t is array (natural range 0 to 2**gprf_size_g-1) of std_ulogic_vector(dmem_width_g-1 downto 0);
 
-  -- NOTE: to save flops we could also register the addresses which are less and mux out the registerfile
-  --       directely which would save flops at the cost of speed
-  --       also, we could save R0
   type reg_t is record 
     regfile : regfile_t;
-    dat_a   : std_ulogic_vector(dmem_width_g-1 downto 0);
-    dat_b   : std_ulogic_vector(dmem_width_g-1 downto 0);
   end record reg_t;
   constant dflt_reg_c : reg_t :=(
-    regfile => (others => (others => '0')),
-    dat_a   => (others => '0'),
-    dat_b   => (others => '0')
+    regfile => (others => (others => '0'))
   );
 
   signal r, rin : reg_t;
@@ -50,11 +43,8 @@ begin
       v.regfile(to_integer(unsigned(gprf_i.adr_w))) := gprf_i.dat_w;
     end if;
     
-    v.dat_a := r.regfile(to_integer(unsigned(gprf_i.adr_a)));
-    v.dat_b := r.regfile(to_integer(unsigned(gprf_i.adr_b)));
-
-    gprf_o.dat_a <= r.dat_a;
-    gprf_o.dat_b <= r.dat_b;
+    gprf_o.dat_a <= r.regfile(to_integer(unsigned(gprf_i.adr_a)));
+    gprf_o.dat_b <= r.regfile(to_integer(unsigned(gprf_i.adr_b)));
 
     rin <= v;
   end process comb0;
