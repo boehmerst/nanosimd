@@ -240,10 +240,7 @@ begin
 
       opcode     := get_opcode(instruction);
 
-      -- TODO: The reused decode_out and execute_out types might have elements not required or meant to be register
-      --       which we still need as registers. The dafault assignment is to net get trapped by latches
-      decode  := dflt_decode_out_c;
-
+      decode                    := dflt_decode_out_c;
       decode.pc                 := pc;
       decode.ctrl_wrb.reg_d     := inst_rtype.rd;
       decode.reg_a              := inst_rtype.rs1;
@@ -255,7 +252,6 @@ begin
 
       -- TODO: place relevant condition (e.g. stall, kill, fetch delay, irq, trap and hazard conditions etc. here)
       if(decode_i.flush_id = '1') then
-        -- NOTE: just for readability
         decode.pc             := (others=>'0');
         decode.ctrl_wrb.reg_d := (others=>'0');
         decode.reg_a          := (others=>'0');
@@ -553,17 +549,13 @@ begin
       execute_o => executei0_execute
     );
 
-    type state_t is (ST_DISPATCH, ST_RUNNING, ST_ALU_WAIT, ST_BRANCH, ST_BRANCHED, ST_MEM_REQ, ST_MEM_WAIT);
-
     type reg_t is record
-      state      : state_t;
       flush      : std_ulogic;
       ctrl_wrb   : forward_t;
       ctrl_mem   : ctrl_memory_t;
       alu_result : std_ulogic_vector(exec_data_width_g-1 downto 0);
     end record reg_t;
     constant dflt_reg_c : reg_t :=(
-      state      => ST_BRANCHED,
       flush      => '0',
       ctrl_wrb   => dflt_forward_c,
       ctrl_mem   => dflt_ctrl_memory_c,
@@ -604,8 +596,8 @@ begin
 
       execute := dflt_execute_out_c;
 
-      sel_dat_a := select_register_data(execute_i.dat_a, execute_i.reg_a, r.alu_result, '0');
-      sel_dat_b := select_register_data(execute_i.dat_b, execute_i.reg_b, r.alu_result, '0');
+      sel_dat_a := select_register_data(execute_i.dat_a, execute_i.reg_a);
+      sel_dat_b := select_register_data(execute_i.dat_b, execute_i.reg_b);
 
       ---------------------------------------------------------------------------
       -- conditional flush execution in case of control hazards (branches)
@@ -765,39 +757,13 @@ begin
         end case;
       end if;
 
+      v.flush := branch;
+
       execute.branch        := branch;
-      execute.branch_target := branch_target;
-
-      ---------------------------------------------------------------------------
-      -- controller
-      ---------------------------------------------------------------------------
-      v.flush := '0'; -- TODO: for now we assume one cycle delay to recover from branch -> clear
-    
-      fsm0: case(r.state) is
-        when ST_BRANCH   => v.state := ST_BRANCHED;
-
-        when ST_BRANCHED => v.state := ST_DISPATCH;
-
-        when ST_DISPATCH => v.state := ST_RUNNING;
-
-        when ST_RUNNING  => v.state := ST_RUNNING;
-                            if branch = '1' then
-                              v.state := ST_BRANCH;
-                              v.flush := '1';
-                            end if;
-
-        when ST_ALU_WAIT => v.state := ST_RUNNING;
-
-        when ST_MEM_REQ  => v.state := ST_RUNNING;
-
-        when ST_MEM_WAIT => v.state := ST_RUNNING;
-      
-        when others   => null;
-      end case fsm0;
-      
-      execute.alu_result := alu_result;
-      execute.flush_id   := r.flush;
-      execute.ctrl_mem   := v.ctrl_mem;
+      execute.branch_target := branch_target;      
+      execute.alu_result    := alu_result;
+      execute.flush_id      := r.flush;
+      execute.ctrl_mem      := v.ctrl_mem;
 
       execute_o <= execute;
       rin       <= v;
