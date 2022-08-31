@@ -183,11 +183,9 @@ package nanosimd_pkg is
     ctrl_wrb          => dflt_forward_c
   );
 
-
   type execute_in_t is record
     irq               : irq_ctrl_t;
     pc                : std_ulogic_vector(core_addr_width_c-1 downto 0);
-    inst              : std_ulogic_vector(core_data_width_c-1 downto 0);
     reg_a             : std_ulogic_vector(log2ceil(gprf_size_c)-1  downto 0);
     dat_a             : std_ulogic_vector(core_data_width_c-1 downto 0);
     reg_b             : std_ulogic_vector(log2ceil(gprf_size_c)-1  downto 0);
@@ -217,11 +215,6 @@ package nanosimd_pkg is
     branch_target     => (others => '0')
   );
 
-  --TODO These types are just a starting point to get things running
-  --     We want decopubled memory access without requiring the core
-  --     being stalled once the memory access gets delays
-  --     so we want outstanding memory reads and prefetch buffers
-  --     or maybe even caches
   type mem_in_t is record
     dat_b             : std_ulogic_vector(core_data_width_c-1 downto 0);
     mem_addr          : std_ulogic_vector(core_data_width_c-1 downto 0);
@@ -267,7 +260,7 @@ package nanosimd_pkg is
     en                => '0'
   );
 
-
+  function select_register_data (reg_dat, reg : std_ulogic_vector) return std_ulogic_vector;
   function select_register_data (reg_dat, reg, wb_dat : std_ulogic_vector; write : std_ulogic) return std_ulogic_vector;
   function fwd_cond (reg_write : std_ulogic; reg_a, reg_d : std_ulogic_vector) return std_ulogic;
   function align_mem_load (data : std_ulogic_vector; size : transfer_size_t; address : std_ulogic_vector; zero_extend : std_ulogic) return std_ulogic_vector;
@@ -278,6 +271,22 @@ package nanosimd_pkg is
 end package nanosimd_pkg;
 
 package body nanosimd_pkg is
+  --------------------------------------------------------------------------------
+  -- This function select the register value:
+  --   A) zero
+  --   B) value from register file
+  --------------------------------------------------------------------------------
+  function select_register_data (reg_dat, reg : std_ulogic_vector) return std_ulogic_vector is
+    variable val : std_ulogic_vector(core_data_width_c-1 downto 0);
+  begin
+    if(cfg_reg_force_zero_c = true and is_zero(reg) = '1') then
+      val := (others => '0');
+    else
+      val := reg_dat;
+    end if;
+    return val;
+  end function select_register_data;
+
   --------------------------------------------------------------------------------
   -- This function select the register value:
   --   A) zero
@@ -294,7 +303,7 @@ package body nanosimd_pkg is
     else
       val := reg_dat;
     end if;
-      return val;
+    return val;
   end function select_register_data;
     
   --------------------------------------------------------------------------------
