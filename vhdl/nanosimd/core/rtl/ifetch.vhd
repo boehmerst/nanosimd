@@ -19,6 +19,7 @@ entity ifetch is
     en_i      : in  std_ulogic;
     fetch_i   : in  fetch_in_t;
     fetch_o   : out fetch_out_t;
+    imem_i    : in  imem_in_t;
     imem_o    : out imem_out_t
   );
 end entity ifetch;
@@ -41,7 +42,7 @@ begin
   ------------------------------------------------------------------------------
   -- comb0
   ------------------------------------------------------------------------------
-  comb0: process(r, fetch_i) is
+  comb0: process(r, fetch_i, imem_i) is
     variable v   : reg_t;
     variable vpc : unsigned(fetch_addr_width_g-1 downto 0);
   begin
@@ -58,6 +59,8 @@ begin
     end if;
 
     fetch_o.pc    <= std_ulogic_vector(r.pc_del);
+    fetch_o.inst  <= imem_i.data;
+
     imem_o.addr   <= std_ulogic_vector(r.pc);
    
     rin <= v;

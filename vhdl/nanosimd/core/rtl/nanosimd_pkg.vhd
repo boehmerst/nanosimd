@@ -22,6 +22,7 @@ package nanosimd_pkg is
 
   type fetch_out_t is record
     pc                : std_ulogic_vector(core_addr_width_c-1 downto 0);
+    inst              : std_ulogic_vector(core_data_width_c-1 downto 0);
   end record fetch_out_t;
 
   type alu_op_t           is (ALU_ADD, ALU_OR, ALU_AND, ALU_XOR, ALU_SHIFT_LEFT, ALU_SHIFT_RIGHT, ALU_UCOMP, ALU_COMP, ALU_MUL, ALU_MULH, ALU_DIV, ALU_REM);
@@ -136,7 +137,6 @@ package nanosimd_pkg is
     reg_write         => '0'
   );
 
-
   type gprf_in_t is record
     adr_a             : std_ulogic_vector(log2ceil(gprf_size_c)-1  downto 0);
     adr_b             : std_ulogic_vector(log2ceil(gprf_size_c)-1  downto 0);
@@ -155,7 +155,6 @@ package nanosimd_pkg is
     irq               : irq_ctrl_t;
     pc                : std_ulogic_vector(core_addr_width_c-1  downto 0);
     inst              : std_ulogic_vector(core_data_width_c-1 downto 0);
-    ctrl_wrb          : forward_t;
     ctrl_mem_wrb      : ctrl_memory_writeback_t;
     mem_result        : std_ulogic_vector(core_data_width_c-1 downto 0);
     alu_result        : std_ulogic_vector(core_data_width_c-1 downto 0);
@@ -172,8 +171,6 @@ package nanosimd_pkg is
     ctrl_ex           : ctrl_execution_t;
     ctrl_mem          : ctrl_memory_t;
     ctrl_wrb          : forward_t;
-    fwd_dec_result    : std_ulogic_vector(core_data_width_c-1 downto 0);
-    fwd_dec           : forward_t;
   end record decode_out_t;
   constant dflt_decode_out_c : decode_out_t :=(
     reg_a             => (others=>'0'),
@@ -183,15 +180,9 @@ package nanosimd_pkg is
     stall             => '0',
     ctrl_ex           => dflt_ctrl_execution_c,
     ctrl_mem          => dflt_ctrl_memory_c,
-    ctrl_wrb          => dflt_forward_c,
-    fwd_dec_result    => (others => '0'),
-    fwd_dec           => dflt_forward_c
+    ctrl_wrb          => dflt_forward_c
   );
 
-  type decode_comb_out_t is record
-    hazard            : std_ulogic;
-    stall             : std_ulogic;
-  end record decode_comb_out_t;
 
   type execute_in_t is record
     irq               : irq_ctrl_t;
@@ -203,25 +194,17 @@ package nanosimd_pkg is
     dat_b             : std_ulogic_vector(core_data_width_c-1 downto 0);  
     imm               : std_ulogic_vector(core_data_width_c-1 downto 0);
     stall             : std_ulogic;
-    hazard            : std_ulogic;
-    fwd_dec           : forward_t;
-    fwd_dec_result    : std_ulogic_vector(core_data_width_c-1 downto 0);
-    fwd_mem           : forward_t;
     ctrl_ex           : ctrl_execution_t;
     ctrl_mem          : ctrl_memory_t;
     ctrl_wrb          : forward_t;
     ctrl_mem_wrb      : ctrl_memory_writeback_t;
-    mem_result        : std_ulogic_vector(core_data_width_c-1 downto 0);
-    alu_result        : std_ulogic_vector(core_data_width_c-1 downto 0);
   end record execute_in_t;
 
   type execute_out_t is record
     alu_result        : std_ulogic_vector(core_data_width_c-1 downto 0);
     dat_b             : std_ulogic_vector(core_data_width_c-1 downto 0);
     flush_id          : std_ulogic;
-    flush_ex          : std_ulogic;
     ctrl_mem          : ctrl_memory_t;
-    ctrl_wrb          : forward_t;
     branch            : std_ulogic;
     branch_target     : std_ulogic_vector(core_addr_width_c-1 downto 0);
   end record execute_out_t;
@@ -229,9 +212,7 @@ package nanosimd_pkg is
     alu_result        => (others=>'0'),
     dat_b             => (others=>'0'),
     flush_id          => '0',
-    flush_ex          => '0',
     ctrl_mem          => dflt_ctrl_memory_c,
-    ctrl_wrb          => dflt_forward_c,
     branch            => '0',
     branch_target     => (others => '0')
   );
@@ -241,6 +222,21 @@ package nanosimd_pkg is
   --     being stalled once the memory access gets delays
   --     so we want outstanding memory reads and prefetch buffers
   --     or maybe even caches
+  type mem_in_t is record
+    dat_b             : std_ulogic_vector(core_data_width_c-1 downto 0);
+    mem_addr          : std_ulogic_vector(core_data_width_c-1 downto 0);
+    ctrl_mem          : ctrl_memory_t;
+  end record mem_in_t;
+
+  type mem_out_t is record
+    alu_result        : std_ulogic_vector(core_data_width_c-1 downto 0);
+    ctrl_mem_wrb      : ctrl_memory_writeback_t;
+  end record mem_out_t;
+  constant dflt_mem_out_c : mem_out_t :=(
+    alu_result        => (others=>'0'),
+    ctrl_mem_wrb      => dflt_ctrl_memory_writeback_c
+  );
+
   type imem_in_t is record
     data              : std_ulogic_vector(core_addr_width_c-1 downto 0);
   end record imem_in_t;
@@ -274,6 +270,10 @@ package nanosimd_pkg is
 
   function select_register_data (reg_dat, reg, wb_dat : std_ulogic_vector; write : std_ulogic) return std_ulogic_vector;
   function fwd_cond (reg_write : std_ulogic; reg_a, reg_d : std_ulogic_vector) return std_ulogic;
+  function align_mem_load (data : std_ulogic_vector; size : transfer_size_t; address : std_ulogic_vector; zero_extend : std_ulogic) return std_ulogic_vector;
+  function align_mem_store (data : std_ulogic_vector; size : transfer_size_t) return std_ulogic_vector;
+  function decode_mem_store (address : std_ulogic_vector(1 downto 0); size : transfer_size_t) return std_ulogic_vector;
+
 
 end package nanosimd_pkg;
 
@@ -306,6 +306,81 @@ package body nanosimd_pkg is
   begin
     return reg_write and compare(reg_a, reg_d);
   end function fwd_cond;
+
+  --------------------------------------------------------------------------------
+  -- This function aligns the memory load operation (little endian decoding)
+  --------------------------------------------------------------------------------
+  function align_mem_load (data : std_ulogic_vector; size : transfer_size_t; address : std_ulogic_vector; zero_extend : std_ulogic) return std_ulogic_vector is
+    variable sign : std_ulogic;
+  begin
+    case size is
+      when byte => 
+        case address(1 downto 0) is
+          when "00"   => sign := not zero_extend and data(7);
+                         return sign_extend(data( 7 downto  0), sign, core_data_width_c);
+
+          when "01"   => sign := not zero_extend and data(15);
+                         return sign_extend(data(15 downto  8), sign, core_data_width_c);
+
+          when "10"   => sign := not zero_extend and data(23);
+                         return sign_extend(data(23 downto 16), sign, core_data_width_c);
+
+          when "11"   => sign := not zero_extend and data(31);
+                         return sign_extend(data(31 downto 24), sign, core_data_width_c);
+
+          when others => return C_32_ZEROS;
+        end case;
+      when halfword => 
+        case address(1 downto 0) is
+          when "00"   => sign := not zero_extend and data(15);
+                         return sign_extend(data(15 downto  0), sign, core_data_width_c);
+
+          when "10"   => sign := not zero_extend and data(31);
+                         return sign_extend(data(31 downto 16), sign, core_data_width_c);
+
+          when others => return C_32_ZEROS;
+        end case;
+      when others =>
+        return data;
+    end case;
+  end function align_mem_load;
+
+  --------------------------------------------------------------------------------
+  -- This function repeats the operand to all positions in a memory store operation
+  --------------------------------------------------------------------------------
+  function align_mem_store (data : std_ulogic_vector; size : transfer_size_t) return std_ulogic_vector is
+  begin
+    case size is
+      when byte     => return data( 7 downto 0) & data( 7 downto 0) & data(7 downto 0) & data(7 downto 0);
+      when halfword => return data(15 downto 0) & data(15 downto 0);
+      when others   => return data;
+    end case;
+  end function align_mem_store;
+
+  --------------------------------------------------------------------------------
+  -- This function selects the correct bytes for memory writes (little endian encoding)
+  --------------------------------------------------------------------------------
+  function decode_mem_store (address : std_ulogic_vector(1 downto 0); size : transfer_size_t) return std_ulogic_vector is
+  begin
+    case size is
+      when BYTE =>
+        case address is
+          when "00"   => return "0001";
+          when "01"   => return "0010";
+          when "10"   => return "0100";
+          when "11"   => return "1000";
+          when others => return "0000";
+        end case;
+      when HALFWORD =>
+        case address is
+          when "00"   => return "0011";
+          when "10"   => return "1100";
+          when others => return "0000";
+        end case;
+      when others =>
+        return "1111";
+    end case;
+  end function decode_mem_store;
 
 end package body nanosimd_pkg;
 

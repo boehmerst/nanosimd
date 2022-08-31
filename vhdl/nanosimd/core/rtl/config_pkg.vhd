@@ -14,6 +14,7 @@ package config_pkg is
 
   constant cfg_reg_force_zero_c : boolean := true;
   constant cfg_reg_fwd_wrb_c    : boolean := true;
+  constant cfg_mem_fwd_wrb_c    : boolean := true;
 
 end package config_pkg;
 

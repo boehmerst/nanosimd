@@ -37,8 +37,8 @@ architecture rtl of core is
   signal fetch                : fetch_in_t;
   signal fetchi0_fetch        : fetch_out_t;
 
-  signal exec                 : execute_in_t;
-  signal execi0_execute       : execute_out_t;
+  signal exec                 : fetch_out_t;
+  signal execi0_fetch         : fetch_in_t;
 
 begin
   ------------------------------------------------------------------------------
@@ -50,10 +50,6 @@ begin
   ------------------------------------------------------------------------------
   -- fetch (IF)
   ------------------------------------------------------------------------------
-  fetch.stall         <= '0';
-  fetch.branch        <= execi0_execute.branch;
-  fetch.branch_target <= execi0_execute.branch_target;
-  
   fetchi0: entity work.ifetch
     generic map (
       fetch_addr_width_g => core_addr_width_c
@@ -63,30 +59,30 @@ begin
       reset_n_i          => reset_n_i,
       init_i             => init_i,
       en_i               => en,
-      fetch_i            => fetch,
+      fetch_i            => execi0_fetch,
       fetch_o            => fetchi0_fetch,
+      imem_i             => imem_i,
       imem_o             => imem_o
     );
-
-  -- TODO: some quick assignments to get simulation up
-  exec.pc    <= fetchi0_fetch.pc;
-  exec.inst  <= imem_i.data;
-  exec.stall <= '0';
 
   execi0: entity work.iexecute
     generic map (
       exec_addr_width_g => core_addr_width_c,
       exec_data_width_g => core_data_width_c,
       exec_gprf_size_g  => gprf_size_c,
+      use_reg_fwd_wrb_g => cfg_reg_fwd_wrb_c,  
+      use_mem_fwd_wrb_g => cfg_mem_fwd_wrb_c,
       use_m_ext_g       => use_m_ext_c
     )
     port map (
-      clk_i              => clk_i,
-      reset_n_i          => reset_n_i,
-      init_i             => init_i,
-      en_i               => exec_en,
-      execute_i          => exec,
-      execute_o          => execi0_execute
+      clk_i             => clk_i,
+      reset_n_i         => reset_n_i,
+      init_i            => init_i,
+      en_i              => exec_en,
+      fetch_i           => fetchi0_fetch,
+      fetch_o           => execi0_fetch,
+      dmem_i            => dmem_i,
+      dmem_o            => dmem_o
     );
 
 
